@@ -1,25 +1,52 @@
-use std::{
-    fs::File,
-    io::{BufReader, Read},
-};
+use std::{fs::File, io::Read};
+
+use log::debug;
 
 use crate::common::Error;
 
 pub(crate) struct Database {
-    pub(crate) page_size: u16,
+    pub(crate) page_size: usize,
+    pub(crate) table_count: usize,
 }
 
 impl Database {
-    pub(crate) fn from(reader: &mut BufReader<File>) -> Result<Self, Error> {
-        let mut buf: [u8; 1024] = [0; 1024];
+    pub(crate) fn from(mut file: File) -> Result<Self, Error> {
+        let mut buf = vec![];
+        file.read_to_end(&mut buf).unwrap();
+        debug!("Database size: {} bytes", buf.len());
 
-        // The header string: "SQLite format 3\000"
-        reader.read_exact(&mut buf[..16]).unwrap();
+        // The database page size in bytes. Must be a power of two between 512 and 32768 inclusive, or the value 1 representing a page size of 65536.f[..2]).unwrap();
+        let page_size = u16::from_be_bytes(buf[16..18].try_into().unwrap());
+        let page_size: usize = if page_size == 1 {
+            65536
+        } else {
+            assert!(page_size >= 512);
+            assert!(page_size <= 32768);
+            page_size as usize
+        };
+        debug!("Page size: {}", page_size);
 
-        // The database page size in bytes. Must be a power of two between 512 and 32768 inclusive, or the value 1 representing a page size of 65536.
-        reader.read_exact(&mut buf[..2]).unwrap();
-        let page_size = u16::from_be_bytes(buf[..2].try_into().unwrap());
+        let mut table_count = 0;
+        let mut offset = page_size;
 
-        Ok(Self { page_size })
+        while offset < buf.len() {
+            debug!("Reading at offset: {}", offset);
+            match buf[offset] {
+                2 => {}
+                5 => {}
+                10 => {}
+                13 => {
+                    table_count += 1;
+                }
+                other => return Err(format!("Invalid page header byte: {}", other).into()),
+            }
+
+            offset += page_size;
+        }
+
+        Ok(Self {
+            page_size,
+            table_count,
+        })
     }
 }

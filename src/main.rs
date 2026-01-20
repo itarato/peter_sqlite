@@ -2,7 +2,6 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use log::info;
 use std::fs::File;
-use std::io::BufReader;
 
 use crate::database::Database;
 
@@ -24,12 +23,12 @@ fn main() -> Result<()> {
 
     let args = ProgramArgs::parse();
     let file = File::open(&args.db_file_name)?;
-    let mut buf_reader = BufReader::new(file);
-    let db = Database::from(&mut buf_reader).unwrap();
+    let db = Database::from(file).unwrap();
 
     match args.command.as_str() {
         ".dbinfo" => {
             println!("database page size: {}", db.page_size);
+            println!("number of tables: {}", db.table_count);
         }
         other => bail!("Missing or invalid command passed: {}", other),
     }
