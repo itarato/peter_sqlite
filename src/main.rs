@@ -1,35 +1,37 @@
 use anyhow::{Result, bail};
+use clap::Parser;
+use log::info;
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::BufReader;
+
+use crate::database::Database;
+
+mod common;
+mod database;
+
+#[derive(clap::Parser)]
+#[command(version, about, long_about = None)]
+struct ProgramArgs {
+    db_file_name: String,
+    command: String,
+}
 
 fn main() -> Result<()> {
-    // Parse arguments
-    let args = std::env::args().collect::<Vec<_>>();
-    match args.len() {
-        0 | 1 => bail!("Missing <database path> and <command>"),
-        2 => bail!("Missing <command>"),
-        _ => {}
-    }
+    // unsafe { std::env::set_var("RUST_LOG", "debug") };
+    pretty_env_logger::init();
 
-    // Parse command and act accordingly
-    let command = &args[2];
-    match command.as_str() {
+    info!("Peter SQLite Start");
+
+    let args = ProgramArgs::parse();
+    let file = File::open(&args.db_file_name)?;
+    let mut buf_reader = BufReader::new(file);
+    let db = Database::from(&mut buf_reader).unwrap();
+
+    match args.command.as_str() {
         ".dbinfo" => {
-            let mut file = File::open(&args[1])?;
-            let mut header = [0; 100];
-            file.read_exact(&mut header)?;
-
-            // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
-            #[allow(unused_variables)]
-            let page_size = u16::from_be_bytes([header[16], header[17]]);
-
-            // You can use print statements as follows for debugging, they'll be visible when running tests.
-            eprintln!("Logs from your program will appear here!");
-
-            // TODO: Uncomment the code below to pass the first stage
-            println!("database page size: {}", page_size);
+            println!("database page size: {}", db.page_size);
         }
-        _ => bail!("Missing or invalid command passed: {}", command),
+        other => bail!("Missing or invalid command passed: {}", other),
     }
 
     Ok(())
