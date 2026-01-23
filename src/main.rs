@@ -30,6 +30,9 @@ fn main() -> Result<()> {
             println!("database page size: {}", db.page_size);
             println!("number of tables: {}", db.table_count);
         }
+        ".tables" => {
+            println!("{}", db.table_names.join(" "));
+        }
         other => bail!("Missing or invalid command passed: {}", other),
     }
 
