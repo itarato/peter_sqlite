@@ -7,6 +7,7 @@ use crate::database::Database;
 
 mod common;
 mod database;
+mod reader;
 
 #[derive(clap::Parser)]
 #[command(version, about, long_about = None)]
@@ -27,7 +28,7 @@ fn main() -> Result<()> {
 
     match args.command.as_str() {
         ".dbinfo" => {
-            println!("database page size: {}", db.page_size);
+            println!("database page size: {}", db.header.page_size);
             println!("number of tables: {}", db.table_count);
         }
         ".tables" => {
