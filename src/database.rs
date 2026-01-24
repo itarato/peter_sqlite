@@ -100,11 +100,18 @@ impl BTreePageHeader {
     }
 }
 
+#[derive(Debug)]
 enum Record {
     String(String),
+    I8(i8),
+    I16(i16),
+    I24(i32),
+    I32(i32),
+    I64(i64),
     Null,
 }
 
+#[derive(Debug)]
 enum RecordFormat {
     Null,
     TwoCompInt(u8),
@@ -152,7 +159,11 @@ impl RecordFormat {
         match self {
             Self::String(len) => Record::String(reader.pop_str(*len)),
             Self::Null => Record::Null,
-            _ => unimplemented!(),
+            Self::TwoCompInt(byte_len) => match byte_len {
+                1 => Record::I8(reader.pop(1)[0] as i8),
+                other => unimplemented!("Two comp int fetch for size {} not implemented", other),
+            },
+            other => unimplemented!("Record fetch not implemented for: {:?}", other),
         }
     }
 }
@@ -183,20 +194,27 @@ impl TableBTreeLeafCell {
 
         let payload_size = reader.pop_varint() as usize;
         let rowid = reader.pop_varint();
+
+        // Payload:
         reader.pop_varint(); // Size of record header (varint)
 
-        let schema_type = RecordFormat::from(reader.pop_varint());
-        let schema_name = RecordFormat::from(reader.pop_varint());
-        let table_name = RecordFormat::from(reader.pop_varint());
+        let schema_type_header = RecordFormat::from(reader.pop_varint());
+        let schema_name_header = RecordFormat::from(reader.pop_varint());
+        let table_name_header = RecordFormat::from(reader.pop_varint());
 
-        reader.pop_varint(); // Serial type for sqlite_schema.rootpage (varint)
-        reader.pop_varint(); // Serial type for sqlite_schema.sql (varint)
+        let root_page_header = RecordFormat::from(reader.pop_varint()); // Serial type for sqlite_schema.rootpage (varint)
+        let sql_schema_header = RecordFormat::from(reader.pop_varint()); // Serial type for sqlite_schema.sql (varint)
 
-        reader.pop(schema_type.byte_len());
-        reader.pop(schema_name.byte_len());
-        let Record::String(table_name) = table_name.pop_value(&mut reader) else {
+        reader.pop(schema_type_header.byte_len());
+        reader.pop(schema_name_header.byte_len());
+        let Record::String(table_name) = table_name_header.pop_value(&mut reader) else {
             panic!("Expected string for table name");
         };
+
+        let root_page = root_page_header.pop_value(&mut reader);
+        debug!("Root page: {:?}", root_page);
+        let sql_schema = sql_schema_header.pop_value(&mut reader);
+        debug!("SQL Schema: {:?}", sql_schema);
 
         Self {
             payload_size,
