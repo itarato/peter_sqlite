@@ -143,6 +143,19 @@ impl RecordFormat {
     }
 }
 
+enum Cell {
+    TableLeaf(TableBTreeLeafCell),
+}
+
+impl Cell {
+    fn from(reader: &Reader<'_, u8>, kind: BTreePageType) -> Self {
+        match kind {
+            BTreePageType::LeafTable => Cell::TableLeaf(TableBTreeLeafCell::from(reader)),
+            _ => unimplemented!(),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct TableBTreeLeafCell {
     size: usize,
@@ -190,6 +203,7 @@ impl Database {
         let file_header = Header::from(&reader);
 
         let first_header = BTreePageHeader::from(&reader.at(100));
+        assert_eq!(BTreePageType::LeafTable, first_header.kind);
         debug!("Header: {:?}", first_header);
 
         let mut table_names = vec![];
