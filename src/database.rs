@@ -44,6 +44,7 @@ struct BTreePageHeader {
     kind: BTreePageType,
     cell_count: u16,
     cell_start_offset: usize,
+    rightmost_pointer: Option<usize>,
 }
 
 impl BTreePageHeader {
@@ -62,21 +63,93 @@ impl BTreePageHeader {
             cell_start_offset = 0x10_0000;
         }
 
+        let rightmost_pointer = match kind {
+            BTreePageType::InteriorIndex | BTreePageType::InteriorTable => {
+                Some(reader.at(8).peek_i32() as usize)
+            }
+            BTreePageType::LeafIndex | BTreePageType::LeafTable => None,
+        };
+
         Self {
             kind,
             cell_count,
             cell_start_offset,
+            rightmost_pointer,
+        }
+    }
+
+    fn byte_len(&self) -> usize {
+        match self.kind {
+            BTreePageType::InteriorIndex | BTreePageType::InteriorTable => 12,
+            BTreePageType::LeafIndex | BTreePageType::LeafTable => 8,
+        }
+    }
+}
+
+enum Record {
+    String(String),
+    Null,
+}
+
+enum RecordFormat {
+    Null,
+    TwoCompInt(u8),
+    Float64,
+    Zero,
+    One,
+    Blob(usize),
+    String(usize),
+}
+
+impl RecordFormat {
+    fn from(v: i64) -> Self {
+        match v {
+            0 => Self::Null,
+            1 => Self::TwoCompInt(1),
+            2 => Self::TwoCompInt(2),
+            3 => Self::TwoCompInt(3),
+            4 => Self::TwoCompInt(4),
+            5 => Self::TwoCompInt(6),
+            6 => Self::TwoCompInt(8),
+            7 => Self::Float64,
+            8 => Self::Zero,
+            9 => Self::One,
+            10 | 11 => panic!("Not supported"),
+            other => {
+                if other % 2 == 0 {
+                    Self::Blob((other as usize - 12) / 2)
+                } else {
+                    Self::String((other as usize - 13) / 2)
+                }
+            }
+        }
+    }
+
+    fn byte_len(&self) -> usize {
+        match self {
+            Self::Blob(len) | Self::String(len) => *len,
+            Self::Float64 => 8,
+            Self::Null | Self::Zero | Self::One => 0,
+            Self::TwoCompInt(n) => *n as usize,
+        }
+    }
+
+    fn pop_value(&self, reader: &mut Reader<'_, u8>) -> Record {
+        match self {
+            Self::String(len) => Record::String(reader.pop_str(*len)),
+            Self::Null => Record::Null,
+            _ => unimplemented!(),
         }
     }
 }
 
 #[derive(Debug)]
-struct Cell {
+struct TableBTreeLeafCell {
     size: usize,
     table_name: String,
 }
 
-impl Cell {
+impl TableBTreeLeafCell {
     fn from(reader: &Reader<'_, u8>) -> Self {
         let mut reader = reader.clone();
 
@@ -84,21 +157,18 @@ impl Cell {
         reader.pop_varint(); // The rowid
         reader.pop_varint(); // Size of record header (varint)
 
-        let schema_type_size_byte = reader.pop_varint();
-        let scheme_type_size = (schema_type_size_byte - 13) / 2;
-
-        let schema_name_size_byte = reader.pop_varint();
-        let schema_name_size = (schema_name_size_byte - 13) / 2;
-
-        let table_name_size_byte = reader.pop_varint();
-        let table_name_size = (table_name_size_byte - 13) / 2;
+        let schema_type = RecordFormat::from(reader.pop_varint());
+        let schema_name = RecordFormat::from(reader.pop_varint());
+        let table_name = RecordFormat::from(reader.pop_varint());
 
         reader.pop_varint(); // Serial type for sqlite_schema.rootpage (varint)
         reader.pop_varint(); // Serial type for sqlite_schema.sql (varint)
 
-        reader.pop(scheme_type_size as usize);
-        reader.pop(schema_name_size as usize);
-        let table_name = reader.pop_str(table_name_size as usize);
+        reader.pop(schema_type.byte_len());
+        reader.pop(schema_name.byte_len());
+        let Record::String(table_name) = table_name.pop_value(&mut reader) else {
+            panic!("Expected string for table name");
+        };
 
         Self { size, table_name }
     }
@@ -125,7 +195,7 @@ impl Database {
         let mut table_names = vec![];
         let mut cell_offset = first_header.cell_start_offset;
         for _ in 0..first_header.cell_count {
-            let cell = Cell::from(&reader.at(cell_offset));
+            let cell = TableBTreeLeafCell::from(&reader.at(cell_offset));
             debug!("Cell: {:?}", cell);
             cell_offset += cell.size + 2;
 
