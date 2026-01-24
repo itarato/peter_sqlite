@@ -39,12 +39,22 @@ enum BTreePageType {
     LeafTable,
 }
 
+impl BTreePageType {
+    fn is_interior(&self) -> bool {
+        match self {
+            BTreePageType::InteriorIndex | BTreePageType::InteriorTable => true,
+            BTreePageType::LeafIndex | BTreePageType::LeafTable => false,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct BTreePageHeader {
     kind: BTreePageType,
     cell_count: u16,
     cell_start_offset: usize,
     rightmost_pointer: Option<usize>,
+    cell_offsets: Vec<usize>,
 }
 
 impl BTreePageHeader {
@@ -63,26 +73,30 @@ impl BTreePageHeader {
             cell_start_offset = 0x10_0000;
         }
 
-        let rightmost_pointer = match kind {
-            BTreePageType::InteriorIndex | BTreePageType::InteriorTable => {
-                Some(reader.at(8).peek_i32() as usize)
-            }
-            BTreePageType::LeafIndex | BTreePageType::LeafTable => None,
+        let rightmost_pointer = if kind.is_interior() {
+            Some(reader.at(8).peek_i32() as usize)
+        } else {
+            None
         };
+
+        let mut cell_offsets = vec![];
+        let mut cell_offset_location = if kind.is_interior() { 12 } else { 8 };
+        for _ in 0..cell_count {
+            cell_offsets.push(reader.at(cell_offset_location).peek_u16() as usize);
+            cell_offset_location += 2;
+        }
 
         Self {
             kind,
             cell_count,
             cell_start_offset,
             rightmost_pointer,
+            cell_offsets,
         }
     }
 
     fn byte_len(&self) -> usize {
-        match self.kind {
-            BTreePageType::InteriorIndex | BTreePageType::InteriorTable => 12,
-            BTreePageType::LeafIndex | BTreePageType::LeafTable => 8,
-        }
+        if self.kind.is_interior() { 12 } else { 8 }
     }
 }
 
@@ -158,7 +172,8 @@ impl Cell {
 
 #[derive(Debug)]
 struct TableBTreeLeafCell {
-    size: usize,
+    payload_size: usize,
+    rowid: i64,
     table_name: String,
 }
 
@@ -166,8 +181,8 @@ impl TableBTreeLeafCell {
     fn from(reader: &Reader<'_, u8>) -> Self {
         let mut reader = reader.clone();
 
-        let size = reader.pop_varint() as usize;
-        reader.pop_varint(); // The rowid
+        let payload_size = reader.pop_varint() as usize;
+        let rowid = reader.pop_varint();
         reader.pop_varint(); // Size of record header (varint)
 
         let schema_type = RecordFormat::from(reader.pop_varint());
@@ -183,7 +198,11 @@ impl TableBTreeLeafCell {
             panic!("Expected string for table name");
         };
 
-        Self { size, table_name }
+        Self {
+            payload_size,
+            rowid,
+            table_name,
+        }
     }
 }
 
@@ -207,11 +226,9 @@ impl Database {
         debug!("Header: {:?}", first_header);
 
         let mut table_names = vec![];
-        let mut cell_offset = first_header.cell_start_offset;
-        for _ in 0..first_header.cell_count {
+        for cell_offset in first_header.cell_offsets {
             let cell = TableBTreeLeafCell::from(&reader.at(cell_offset));
             debug!("Cell: {:?}", cell);
-            cell_offset += cell.size + 2;
 
             table_names.push(cell.table_name);
         }
