@@ -8,6 +8,7 @@ use crate::database::Database;
 mod common;
 mod database;
 mod reader;
+mod schema;
 
 #[derive(clap::Parser)]
 #[command(version, about, long_about = None)]
