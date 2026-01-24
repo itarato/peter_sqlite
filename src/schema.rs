@@ -9,11 +9,11 @@ pub(crate) enum TableFieldKind {
 
 impl TableFieldKind {
     fn from(raw: &str) -> Self {
-        match raw {
+        match raw.to_lowercase().as_str() {
             "integer" => Self::Int {
                 auto_increment: false,
             },
-            "text" => Self::Text,
+            "text" | "varchar" => Self::Text,
             other => unimplemented!("Field type {} not recognized", other),
         }
     }

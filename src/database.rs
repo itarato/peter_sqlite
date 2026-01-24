@@ -1,6 +1,6 @@
-use crate::{common::Error, reader::Reader};
+use crate::{common::Error, reader::Reader, schema::TableSchema};
 use log::debug;
-use std::{fs::File, io::Read};
+use std::{f64::consts::PI, fs::File, io::Read};
 
 pub(crate) struct Header {
     pub(crate) page_size: usize,
@@ -111,6 +111,15 @@ enum Record {
     Null,
 }
 
+impl Record {
+    fn unwrap_string(&self) -> &String {
+        match self {
+            Self::String(s) => s,
+            _ => panic!("Expected string field"),
+        }
+    }
+}
+
 #[derive(Debug)]
 enum RecordFormat {
     Null,
@@ -168,34 +177,25 @@ impl RecordFormat {
     }
 }
 
-enum Cell {
-    TableLeaf(TableBTreeLeafCell),
-}
-
-impl Cell {
-    fn from(reader: &Reader<'_, u8>, kind: BTreePageType) -> Self {
-        match kind {
-            BTreePageType::LeafTable => Cell::TableLeaf(TableBTreeLeafCell::from(reader)),
-            _ => unimplemented!(),
-        }
-    }
+struct SchemaDefinition {
+    table_name: String,
+    root_page: Record,
+    sql_schema: TableSchema,
 }
 
 #[derive(Debug)]
-struct TableBTreeLeafCell {
-    payload_size: usize,
-    rowid: i64,
-    table_name: String,
+struct CellPayload {
+    bytes: Vec<u8>,
 }
 
-impl TableBTreeLeafCell {
-    fn from(reader: &Reader<'_, u8>) -> Self {
-        let mut reader = reader.clone();
+impl CellPayload {
+    fn new(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
 
-        let payload_size = reader.pop_varint() as usize;
-        let rowid = reader.pop_varint();
+    fn read_as_schema_definition(&self) -> SchemaDefinition {
+        let mut reader = Reader::new(&self.bytes[..]);
 
-        // Payload:
         reader.pop_varint(); // Size of record header (varint)
 
         let schema_type_header = RecordFormat::from(reader.pop_varint());
@@ -213,13 +213,49 @@ impl TableBTreeLeafCell {
 
         let root_page = root_page_header.pop_value(&mut reader);
         debug!("Root page: {:?}", root_page);
-        let sql_schema = sql_schema_header.pop_value(&mut reader);
-        debug!("SQL Schema: {:?}", sql_schema);
+        let sql_schema_raw = sql_schema_header.pop_value(&mut reader);
+        let sql_schema = TableSchema::from(sql_schema_raw.unwrap_string()).unwrap();
+
+        SchemaDefinition {
+            table_name,
+            root_page,
+            sql_schema,
+        }
+    }
+}
+
+enum Cell {
+    TableLeaf(TableBTreeLeafCell),
+}
+
+impl Cell {
+    fn from(reader: &Reader<'_, u8>, kind: BTreePageType) -> Self {
+        match kind {
+            BTreePageType::LeafTable => Cell::TableLeaf(TableBTreeLeafCell::from(reader)),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TableBTreeLeafCell {
+    payload_size: usize,
+    rowid: i64,
+    payload: CellPayload,
+}
+
+impl TableBTreeLeafCell {
+    fn from(reader: &Reader<'_, u8>) -> Self {
+        let mut reader = reader.clone();
+
+        let payload_size = reader.pop_varint() as usize;
+        let rowid = reader.pop_varint();
+        let payload_bytes = reader.pop(payload_size).to_vec();
 
         Self {
             payload_size,
             rowid,
-            table_name,
+            payload: CellPayload::new(payload_bytes),
         }
     }
 }
@@ -248,7 +284,7 @@ impl Database {
             let cell = TableBTreeLeafCell::from(&reader.at(cell_offset));
             debug!("Cell: {:?}", cell);
 
-            table_names.push(cell.table_name);
+            table_names.push(cell.payload.read_as_schema_definition().table_name);
         }
 
         table_names.sort();
