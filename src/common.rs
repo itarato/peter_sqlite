@@ -20,8 +20,9 @@ impl BTreePageType {
 }
 
 #[derive(Debug)]
-pub(crate) struct SchemaDefinition {
+pub(crate) struct Table {
     pub(crate) table_name: String,
     pub(crate) root_page: usize,
     pub(crate) sql_schema: TableSchema,
+    pub(crate) rows: Vec<Vec<Record>>,
 }

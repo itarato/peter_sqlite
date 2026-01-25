@@ -1,7 +1,7 @@
 use log::debug;
 
 use crate::{
-    common::{BTreePageType, SchemaDefinition},
+    common::{BTreePageType, Table},
     reader::Reader,
     record::{Record, RecordFormat},
     schema::TableSchema,
@@ -17,7 +17,7 @@ impl CellPayload {
         Self { bytes }
     }
 
-    pub(crate) fn read_as_schema_definition(&self) -> SchemaDefinition {
+    pub(crate) fn read_as_schema_definition(&self) -> Table {
         let mut reader = Reader::new(&self.bytes[..]);
 
         reader.pop_varint(); // Size of record header (varint)
@@ -36,18 +36,19 @@ impl CellPayload {
         };
 
         let root_page = root_page_header.pop_value(&mut reader).unwrap_usize();
-        debug!("Root page: {:?}", root_page);
+        // debug!("Root page: {:?}", root_page);
         let sql_schema_raw = sql_schema_header.pop_value(&mut reader);
         let sql_schema = TableSchema::from(sql_schema_raw.unwrap_string()).unwrap();
 
-        SchemaDefinition {
+        Table {
             table_name,
             root_page,
             sql_schema,
+            rows: vec![],
         }
     }
 
-    pub(crate) fn read_as_table_row(&self, schema: &TableSchema) {
+    pub(crate) fn read_as_table_row(&self, schema: &TableSchema) -> Vec<Record> {
         let mut reader = Reader::new(&self.bytes[..]);
 
         reader.pop_varint(); // Size of record header (varint)
@@ -58,11 +59,10 @@ impl CellPayload {
             .map(|_| RecordFormat::from(reader.pop_varint()))
             .collect::<Vec<_>>();
 
-        let records = record_formats
+        record_formats
             .iter()
             .map(|format| format.pop_value(&mut reader))
-            .collect::<Vec<_>>();
-        dbg!(records);
+            .collect::<Vec<_>>()
     }
 }
 
@@ -90,9 +90,9 @@ impl TableBTreeLeafCell {
     pub(crate) fn from(reader: &Reader<'_, u8>) -> Self {
         let mut reader = reader.clone();
 
-        debug!("Cell read starts, capacity = {}", reader.len());
+        // debug!("Cell read starts, capacity = {}", reader.len());
         let payload_size = reader.pop_varint() as usize;
-        debug!("Payload size = {}", payload_size);
+        // debug!("Payload size = {}", payload_size);
 
         let rowid = reader.pop_varint();
         let payload_bytes = reader.pop(payload_size).to_vec();
@@ -109,7 +109,7 @@ impl TableBTreeLeafCell {
 
 #[derive(Debug)]
 pub(crate) struct TableBTreeInteriorCell {
-    left_child_pointer: usize,
+    pub(crate) left_child_pointer: usize,
     rowid: i64,
 }
 

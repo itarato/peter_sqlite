@@ -34,10 +34,10 @@ fn main() -> Result<()> {
     match args.command.as_str() {
         ".dbinfo" => {
             println!("database page size: {}", db.header.page_size);
-            println!("number of tables: {}", db.table_names.len());
+            println!("number of tables: {}", db.tables.len());
         }
         ".tables" => {
-            println!("{}", db.table_names.join(" "));
+            println!("{}", db.table_names_sorted().join(" "));
         }
         other => bail!("Missing or invalid command passed: {}", other),
     }

@@ -18,11 +18,11 @@ impl DatabaseHeader {
             assert!(page_size <= 32768);
             page_size as usize
         };
-        debug!("Page size: {}", page_size);
+        // debug!("Page size: {}", page_size);
 
         // The schema format number. Supported schema formats are 1, 2, 3, and 4.
         let schema_format = reader.at(44).peek_i32();
-        debug!("Scheme format: {}", schema_format);
+        // debug!("Scheme format: {}", schema_format);
 
         Self {
             page_size,

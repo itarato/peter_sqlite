@@ -45,7 +45,7 @@ impl TableSchema {
     pub(crate) fn from(raw: &str) -> Result<Self, Error> {
         let table_regex = Regex::new(r#"(?s)CREATE\s+TABLE\s+"?(\w+)"?\s*\((.*)\)"#)?;
 
-        debug!("Parsing table schema: {}", raw);
+        // debug!("Parsing table schema: {}", raw);
 
         let caps = table_regex
             .captures(raw)
