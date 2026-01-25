@@ -35,7 +35,7 @@ impl CellPayload {
             panic!("Expected string for table name");
         };
 
-        let root_page = root_page_header.pop_value(&mut reader);
+        let root_page = root_page_header.pop_value(&mut reader).unwrap_usize();
         debug!("Root page: {:?}", root_page);
         let sql_schema_raw = sql_schema_header.pop_value(&mut reader);
         let sql_schema = TableSchema::from(sql_schema_raw.unwrap_string()).unwrap();
@@ -45,6 +45,24 @@ impl CellPayload {
             root_page,
             sql_schema,
         }
+    }
+
+    pub(crate) fn read_as_table_row(&self, schema: &TableSchema) {
+        let mut reader = Reader::new(&self.bytes[..]);
+
+        reader.pop_varint(); // Size of record header (varint)
+
+        let record_formats = &schema
+            .fields
+            .iter()
+            .map(|_| RecordFormat::from(reader.pop_varint()))
+            .collect::<Vec<_>>();
+
+        let records = record_formats
+            .iter()
+            .map(|format| format.pop_value(&mut reader))
+            .collect::<Vec<_>>();
+        dbg!(records);
     }
 }
 
@@ -72,11 +90,14 @@ impl TableBTreeLeafCell {
     pub(crate) fn from(reader: &Reader<'_, u8>) -> Self {
         let mut reader = reader.clone();
 
+        debug!("Cell read starts, capacity = {}", reader.len());
         let payload_size = reader.pop_varint() as usize;
+        debug!("Payload size = {}", payload_size);
+
         let rowid = reader.pop_varint();
         let payload_bytes = reader.pop(payload_size).to_vec();
 
-        reader.pop(4); // Page number of first overflow page
+        // There is a 4 byte overflow page - but it feels like only should be loaded strictly when the content is not fitting on the page.
 
         Self {
             payload_size,

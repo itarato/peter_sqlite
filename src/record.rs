@@ -18,6 +18,16 @@ impl Record {
             _ => panic!("Expected string field"),
         }
     }
+
+    pub(crate) fn unwrap_usize(&self) -> usize {
+        match self {
+            Self::I8(v) => *v as usize,
+            Self::I16(v) => *v as usize,
+            Self::I32(v) => *v as usize,
+            Self::I64(v) => *v as usize,
+            _ => panic!("Expected numeric field"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -68,8 +78,11 @@ impl RecordFormat {
         match self {
             Self::String(len) => Record::String(reader.pop_str(*len)),
             Self::Null => Record::Null,
+            Self::One => Record::I8(1),
+            Self::Zero => Record::I8(0),
             Self::TwoCompInt(byte_len) => match byte_len {
                 1 => Record::I8(reader.pop(1)[0] as i8),
+                2 => Record::I16(reader.pop_i16()),
                 other => unimplemented!("Two comp int fetch for size {} not implemented", other),
             },
             other => unimplemented!("Record fetch not implemented for: {:?}", other),
