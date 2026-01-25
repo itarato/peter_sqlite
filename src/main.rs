@@ -5,9 +5,13 @@ use std::fs::File;
 
 use crate::database::Database;
 
+mod btree_page_header;
+mod cell;
 mod common;
 mod database;
+mod database_header;
 mod reader;
+mod record;
 mod schema;
 
 #[derive(clap::Parser)]
