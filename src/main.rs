@@ -34,7 +34,7 @@ fn main() -> Result<()> {
     match args.command.as_str() {
         ".dbinfo" => {
             println!("database page size: {}", db.header.page_size);
-            println!("number of tables: {}", db.table_count);
+            println!("number of tables: {}", db.table_names.len());
         }
         ".tables" => {
             println!("{}", db.table_names.join(" "));

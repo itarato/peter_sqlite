@@ -10,7 +10,6 @@ use std::{fs::File, io::Read};
 
 pub(crate) struct Database {
     pub(crate) header: DatabaseHeader,
-    pub(crate) table_count: usize,
     pub(crate) table_names: Vec<String>,
 }
 
@@ -37,22 +36,17 @@ impl Database {
 
         table_names.sort();
 
-        let mut table_count = 0;
         let mut offset = file_header.page_size;
 
         while offset < reader.len() {
             debug!("Reading at offset: {}", offset);
             let page_header = BTreePageHeader::from(&reader.at(offset));
-            if page_header.kind == BTreePageType::LeafTable {
-                table_count += 1;
-            }
 
             offset += file_header.page_size;
         }
 
         Ok(Self {
             header: file_header,
-            table_count,
             table_names,
         })
     }
