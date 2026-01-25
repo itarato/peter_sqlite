@@ -1,4 +1,5 @@
 use crate::common::Error;
+use log::debug;
 use regex::Regex;
 
 #[derive(Debug)]
@@ -31,6 +32,7 @@ pub(crate) struct TableField {
     pub(crate) name: String,
     pub(crate) kind: TableFieldKind,
     pub(crate) primary_key: bool,
+    pub(crate) allow_null: bool,
 }
 
 #[derive(Debug)]
@@ -41,7 +43,9 @@ pub(crate) struct TableSchema {
 
 impl TableSchema {
     pub(crate) fn from(raw: &str) -> Result<Self, Error> {
-        let table_regex = Regex::new(r"(?s)CREATE\s+TABLE\s+(\w+)\s*\((.*)\)")?;
+        let table_regex = Regex::new(r#"(?s)CREATE\s+TABLE\s+"?(\w+)"?\s*\((.*)\)"#)?;
+
+        debug!("Parsing table schema: {}", raw);
 
         let caps = table_regex
             .captures(raw)
@@ -83,11 +87,13 @@ impl TableSchema {
             if suffix.contains("autoincrement") {
                 kind.to_auto_increment();
             }
+            let allow_null = !suffix.contains("not null");
 
             fields.push(TableField {
                 name,
                 kind,
                 primary_key,
+                allow_null,
             });
         }
 
