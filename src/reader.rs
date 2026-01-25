@@ -42,6 +42,10 @@ impl<'a> Reader<'a, u8> {
         i16::from_be_bytes(self.pop(2).try_into().expect("Casting to 2 bytes"))
     }
 
+    pub(crate) fn pop_i32(&mut self) -> i32 {
+        i32::from_be_bytes(self.pop(4).try_into().expect("Casting to 4 bytes"))
+    }
+
     pub(crate) fn peek_i32(&self) -> i32 {
         i32::from_be_bytes(self.slice[..4].try_into().expect("Casting to 4 bytes"))
     }

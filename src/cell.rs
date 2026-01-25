@@ -106,3 +106,23 @@ impl TableBTreeLeafCell {
         }
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct TableBTreeInteriorCell {
+    left_child_pointer: usize,
+    rowid: i64,
+}
+
+impl TableBTreeInteriorCell {
+    pub(crate) fn from(reader: &Reader<'_, u8>) -> Self {
+        let mut reader = reader.clone();
+
+        let left_child_pointer = reader.pop_i32() as usize;
+        let rowid = reader.pop_varint();
+
+        Self {
+            left_child_pointer,
+            rowid,
+        }
+    }
+}

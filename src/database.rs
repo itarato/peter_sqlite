@@ -1,6 +1,6 @@
 use crate::{
     btree_page_header::BTreePageHeader,
-    cell::TableBTreeLeafCell,
+    cell::{TableBTreeInteriorCell, TableBTreeLeafCell},
     common::{BTreePageType, Error},
     database_header::DatabaseHeader,
     reader::Reader,
@@ -52,14 +52,25 @@ impl Database {
                         for cell_offset in page_header.cell_offsets {
                             let cell =
                                 TableBTreeLeafCell::from(&reader.at(table_offset + cell_offset));
-                            debug!("Page cell: {:?}", cell);
-                            cell.payload.read_as_table_row(&schema_def.sql_schema);
+                            debug!("Table leaf cell: {:?}", cell);
+                            cell.payload.read_as_table_row(&schema_def.sql_schema); // TODO: save the records.
                         }
 
                         break;
                     }
+
                     BTreePageType::InteriorTable => {
-                        unimplemented!();
+                        for cell_offset in page_header.cell_offsets {
+                            let cell = TableBTreeInteriorCell::from(
+                                &reader.at(table_offset + cell_offset),
+                            );
+                            debug!("Table interior cell: {:?}", cell);
+                        }
+
+                        // TODO: Collect all cell left pointers and the page header's rightmost pointer
+                        //       and add it to the loop stack to keep iterating on.
+
+                        unimplemented!()
                     }
                     other => unimplemented!("Page type {:?} not implemented", other),
                 }
