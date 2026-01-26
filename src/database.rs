@@ -7,11 +7,15 @@ use crate::{
     database_header::DatabaseHeader,
     reader::Reader,
 };
-use std::{collections::VecDeque, fs::File, io::Read};
+use std::{
+    collections::{HashMap, VecDeque},
+    fs::File,
+    io::Read,
+};
 
 pub(crate) struct Database {
     pub(crate) header: DatabaseHeader,
-    pub(crate) tables: Vec<Table>,
+    pub(crate) tables: HashMap<String, Table>,
 }
 
 impl Database {
@@ -27,7 +31,7 @@ impl Database {
         assert_eq!(BTreePageType::LeafTable, first_header.kind);
         // debug!("Header: {:?}", first_header);
 
-        let mut tables = vec![];
+        let mut tables = HashMap::new();
         for cell_offset in first_header.cell_offsets {
             let cell = TableBTreeLeafCell::from(&reader.at(cell_offset));
             // debug!("Schema cell: {:?}", cell);
@@ -72,7 +76,7 @@ impl Database {
                 }
             }
 
-            tables.push(table);
+            tables.insert(table.table_name.clone(), table);
         }
 
         Ok(Self {
@@ -84,8 +88,8 @@ impl Database {
     pub(crate) fn table_names_sorted(&self) -> Vec<String> {
         let mut names = self
             .tables
-            .iter()
-            .map(|table| table.table_name.clone())
+            .keys()
+            .map(|table_name| table_name.clone())
             .collect::<Vec<_>>();
         names.sort();
         names

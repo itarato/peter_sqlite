@@ -3,13 +3,15 @@ use clap::Parser;
 use log::info;
 use std::fs::File;
 
-use crate::database::Database;
+use crate::{database::Database, query::Query, query_executor::QueryExecutor};
 
 mod btree_page_header;
 mod cell;
 mod common;
 mod database;
 mod database_header;
+mod query;
+mod query_executor;
 mod reader;
 mod record;
 mod schema;
@@ -39,7 +41,10 @@ fn main() -> Result<()> {
         ".tables" => {
             println!("{}", db.table_names_sorted().join(" "));
         }
-        other => bail!("Missing or invalid command passed: {}", other),
+        other => {
+            let query = Query::parse(other);
+            QueryExecutor::execute_query(&query, &db);
+        }
     }
 
     Ok(())

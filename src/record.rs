@@ -1,3 +1,5 @@
+use regex::Regex;
+
 use crate::reader::Reader;
 
 #[derive(Debug)]
@@ -26,6 +28,18 @@ impl Record {
             Self::I32(v) => *v as usize,
             Self::I64(v) => *v as usize,
             _ => panic!("Expected numeric field"),
+        }
+    }
+
+    pub(crate) fn parse(raw: &str) -> Self {
+        if Regex::new(r#""[^"]*""#).unwrap().is_match(raw) {
+            Record::String(raw[1..raw.len() - 1].to_string())
+        } else if Regex::new(r#"'[^']*'"#).unwrap().is_match(raw) {
+            Record::String(raw[1..raw.len() - 1].to_string())
+        } else if Regex::new(r"\d+").unwrap().is_match(raw) {
+            Record::I64(i64::from_str_radix(raw, 10).unwrap())
+        } else {
+            panic!("Unrecognized value: {}", raw);
         }
     }
 }
