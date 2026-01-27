@@ -40,12 +40,7 @@ impl CellPayload {
         let sql_schema_raw = sql_schema_header.pop_value(&mut reader);
         let sql_schema = TableSchema::from(sql_schema_raw.unwrap_string()).unwrap();
 
-        Table {
-            table_name,
-            root_page,
-            sql_schema,
-            rows: vec![],
-        }
+        Table::new(table_name, root_page, sql_schema)
     }
 
     pub(crate) fn read_as_table_row(&self, schema: &TableSchema) -> Vec<Record> {

@@ -42,6 +42,35 @@ impl Record {
             panic!("Unrecognized value: {}", raw);
         }
     }
+
+    pub(crate) fn as_int(&self) -> Option<i64> {
+        match self {
+            Self::I8(v) => Some(*v as i64),
+            Self::I16(v) => Some(*v as i64),
+            Self::I32(v) => Some(*v as i64),
+            Self::I64(v) => Some(*v),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn to_string(&self) -> String {
+        match self {
+            Self::String(v) => v.clone(),
+            Self::I8(v) => v.to_string(),
+            Self::I16(v) => v.to_string(),
+            Self::I24(v) => v.to_string(),
+            Self::I32(v) => v.to_string(),
+            Self::I64(v) => v.to_string(),
+            Self::Null => String::from("NULL"),
+        }
+    }
 }
 
 #[derive(Debug)]

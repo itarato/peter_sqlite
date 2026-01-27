@@ -13,8 +13,26 @@ pub(crate) enum QueryConditionOp {
     Eq,
 }
 
+impl QueryConditionOp {
+    pub(crate) fn eval(&self, lhs: &Record, rhs: &Record) -> bool {
+        match self {
+            Self::Eq => {
+                match (lhs.as_int(), rhs.as_int()) {
+                    (Some(a), Some(b)) => return a == b,
+                    _ => {}
+                }
+                match (lhs.as_str(), rhs.as_str()) {
+                    (Some(a), Some(b)) => return a == b,
+                    _ => {}
+                }
+                false
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
-struct QueryCondition {
+pub(crate) struct QueryCondition {
     pub(crate) lhs: String,
     pub(crate) op: QueryConditionOp,
     pub(crate) rhs: Record,
@@ -29,12 +47,12 @@ pub(crate) struct Query {
 
 impl Query {
     pub(crate) fn parse(raw: &str) -> Self {
-        let query_re = Regex::new(r#"SELECT\s+(.*)\s+FROM\s+(\w+)\s*(\s+WHERE\s+(.*))?$"#).unwrap();
+        let query_re =
+            Regex::new(r#"(?i)SELECT\s+(.*)\s+FROM\s+(\w+)\s*(\s+WHERE\s+(.*))?$"#).unwrap();
         let caps = query_re.captures(raw).unwrap().iter().collect::<Vec<_>>();
-        dbg!(&caps);
 
         let fields_raw = caps[1].unwrap().as_str();
-        let fields = if fields_raw.to_lowercase().starts_with("COUNT(") {
+        let fields = if fields_raw.to_lowercase().starts_with("count(") {
             QueryField::Count
         } else {
             let field_parts = fields_raw
