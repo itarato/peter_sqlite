@@ -1,5 +1,3 @@
-use log::debug;
-
 use crate::reader::Reader;
 
 pub(crate) struct DatabaseHeader {

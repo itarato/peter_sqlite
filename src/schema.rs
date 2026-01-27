@@ -32,6 +32,21 @@ pub(crate) struct TableField {
     pub(crate) kind: TableFieldKind,
     pub(crate) primary_key: bool,
     pub(crate) allow_null: bool,
+    pub(crate) id_provider: u64,
+}
+
+impl TableField {
+    pub(crate) fn is_autoincrement(&self) -> bool {
+        match self.kind {
+            TableFieldKind::Int { auto_increment } => auto_increment,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn next_autoincrement_value(&mut self) -> u64 {
+        self.id_provider += 1;
+        self.id_provider
+    }
 }
 
 #[derive(Debug)]
@@ -93,6 +108,7 @@ impl TableSchema {
                 kind,
                 primary_key,
                 allow_null,
+                id_provider: 0,
             });
         }
 

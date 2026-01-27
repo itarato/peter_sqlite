@@ -49,4 +49,13 @@ impl Table {
     pub(crate) fn field_index(&self, name: &str) -> usize {
         self.field_index_cache[name]
     }
+
+    pub(crate) fn insert_row(&mut self, mut values: Vec<Record>) {
+        for (i, field) in self.sql_schema.fields.iter_mut().enumerate() {
+            if field.is_autoincrement() {
+                values[i] = Record::I64(field.next_autoincrement_value() as i64);
+            }
+        }
+        self.rows.push(values);
+    }
 }

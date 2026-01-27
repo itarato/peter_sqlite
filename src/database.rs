@@ -1,4 +1,4 @@
-use log::debug;
+use log::{debug, error, warn};
 
 use crate::{
     btree_page_header::BTreePageHeader,
@@ -37,15 +37,15 @@ impl Database {
             // debug!("Schema cell: {:?}", cell);
 
             let mut table = cell.payload.read_as_schema_definition();
-            // debug!("Schema: {:?}", schema_def);
+            debug!("Schema: {:?}", table);
 
             let mut offset_stack: VecDeque<usize> = VecDeque::new();
             offset_stack.push_back(file_header.page_size * (table.root_page - 1));
 
             while let Some(offset) = offset_stack.pop_front() {
-                // debug!("Reading page at offset: {}", table_offset);
+                // debug!("Reading page at offset: {}", offset);
                 let page_header = BTreePageHeader::from(&reader.at(offset));
-                // debug!("Page header: {:?}", page_header);
+                // debug!("Page kind: {:?}", page_header.kind);
 
                 match page_header.kind {
                     BTreePageType::LeafTable => {
@@ -53,10 +53,9 @@ impl Database {
                             let cell = TableBTreeLeafCell::from(&reader.at(offset + cell_offset));
                             // debug!("Table leaf cell: {:?}", cell);
                             let row = cell.payload.read_as_table_row(&table.sql_schema); // TODO: save the records.
-                            table.rows.push(row);
+                            table.insert_row(row);
                         }
-
-                        break;
+                        // debug!("Found {} rows", table.rows.len());
                     }
 
                     BTreePageType::InteriorTable => {
@@ -65,11 +64,12 @@ impl Database {
                                 TableBTreeInteriorCell::from(&reader.at(offset + cell_offset));
                             // debug!("Table interior cell: {:?}", cell);
 
-                            offset_stack.push_back(cell.left_child_pointer * file_header.page_size);
+                            offset_stack
+                                .push_back((cell.left_child_pointer - 1) * file_header.page_size);
                         }
 
                         offset_stack.push_back(
-                            page_header.rightmost_pointer.unwrap() * file_header.page_size,
+                            (page_header.rightmost_pointer.unwrap() - 1) * file_header.page_size,
                         );
                     }
                     other => unimplemented!("Page type {:?} not implemented", other),

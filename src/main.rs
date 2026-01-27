@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::Parser;
 use log::info;
 use std::fs::File;
@@ -24,7 +24,7 @@ struct ProgramArgs {
 }
 
 fn main() -> Result<()> {
-    // unsafe { std::env::set_var("RUST_LOG", "debug") };
+    unsafe { std::env::set_var("RUST_LOG", "debug") };
     pretty_env_logger::init();
 
     info!("Peter SQLite Start");

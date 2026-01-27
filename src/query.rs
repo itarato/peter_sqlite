@@ -1,3 +1,4 @@
+use log::debug;
 use regex::Regex;
 
 use crate::record::Record;
@@ -15,6 +16,7 @@ pub(crate) enum QueryConditionOp {
 
 impl QueryConditionOp {
     pub(crate) fn eval(&self, lhs: &Record, rhs: &Record) -> bool {
+        // debug!("LHS={:?} RHS={:?}", &lhs, &rhs);
         match self {
             Self::Eq => {
                 match (lhs.as_int(), rhs.as_int()) {
