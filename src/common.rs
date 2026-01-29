@@ -26,7 +26,6 @@ pub(crate) struct Table {
     pub(crate) table_name: String,
     pub(crate) root_page: usize,
     pub(crate) sql_schema: TableSchema,
-    pub(crate) rows: Vec<Vec<Record>>,
     field_index_cache: HashMap<String, usize>,
 }
 
@@ -41,21 +40,11 @@ impl Table {
             table_name,
             root_page,
             sql_schema,
-            rows: vec![],
             field_index_cache,
         }
     }
 
     pub(crate) fn field_index(&self, name: &str) -> usize {
         self.field_index_cache[name]
-    }
-
-    pub(crate) fn insert_row(&mut self, mut values: Vec<Record>) {
-        for (i, field) in self.sql_schema.fields.iter_mut().enumerate() {
-            if field.is_autoincrement() {
-                values[i] = Record::I64(field.next_autoincrement_value() as i64);
-            }
-        }
-        self.rows.push(values);
     }
 }

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
 use log::info;
-use std::fs::File;
+use std::{fs::File, io::Read};
 
-use crate::{database::Database, query::Query, query_executor::QueryExecutor};
+use crate::{database::Database, query::Query, query_executor::QueryExecutor, reader::Reader};
 
 mod btree_page_header;
 mod cell;
@@ -24,14 +24,17 @@ struct ProgramArgs {
 }
 
 fn main() -> Result<()> {
-    unsafe { std::env::set_var("RUST_LOG", "debug") };
+    // unsafe { std::env::set_var("RUST_LOG", "debug") };
     pretty_env_logger::init();
 
     info!("Peter SQLite Start");
 
     let args = ProgramArgs::parse();
-    let file = File::open(&args.db_file_name)?;
-    let db = Database::from(file).unwrap();
+    let mut file = File::open(&args.db_file_name)?;
+    let mut buffer = vec![];
+    file.read_to_end(&mut buffer).unwrap();
+    let reader = Reader::new(&buffer[..]);
+    let db = Database::from(&reader).unwrap();
 
     match args.command.as_str() {
         ".dbinfo" => {
@@ -43,7 +46,7 @@ fn main() -> Result<()> {
         }
         other => {
             let query = Query::parse(other);
-            QueryExecutor::execute_query(&query, &db);
+            QueryExecutor::execute_query(&query, &db, &reader);
         }
     }
 
