@@ -25,6 +25,7 @@ impl Record {
         match self {
             Self::I8(v) => *v as usize,
             Self::I16(v) => *v as usize,
+            Self::I24(v) => *v as usize,
             Self::I32(v) => *v as usize,
             Self::I64(v) => *v as usize,
             _ => panic!("Expected numeric field"),
@@ -126,6 +127,7 @@ impl RecordFormat {
             Self::TwoCompInt(byte_len) => match byte_len {
                 1 => Record::I8(reader.pop(1)[0] as i8),
                 2 => Record::I16(reader.pop_i16()),
+                3 => Record::I24(reader.pop_i24()),
                 other => unimplemented!("Two comp int fetch for size {} not implemented", other),
             },
             other => unimplemented!("Record fetch not implemented for: {:?}", other),

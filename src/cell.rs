@@ -38,7 +38,7 @@ impl CellPayload {
         let root_page = root_page_header.pop_value(&mut reader).unwrap_usize();
         // debug!("Root page: {:?}", root_page);
         let sql_schema_raw = sql_schema_header.pop_value(&mut reader);
-        let sql_schema = TableSchema::from(sql_schema_raw.unwrap_string()).unwrap();
+        let sql_schema = TableSchema::from(sql_schema_raw.unwrap_string());
 
         Table::new(table_name, root_page, sql_schema)
     }

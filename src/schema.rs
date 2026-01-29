@@ -1,4 +1,6 @@
-use crate::common::Error;
+use std::panic;
+
+use log::debug;
 use regex::Regex;
 
 #[derive(Debug)]
@@ -56,28 +58,28 @@ pub(crate) struct TableSchema {
 }
 
 impl TableSchema {
-    pub(crate) fn from(raw: &str) -> Result<Self, Error> {
-        let table_regex = Regex::new(r#"(?s)CREATE\s+TABLE\s+"?(\w+)"?\s*\((.*)\)"#)?;
+    pub(crate) fn from(raw: &str) -> Self {
+        let table_regex = Regex::new(r#"(?s)CREATE\s+TABLE\s+"?(\w+)"?\s*\((.*)\)"#).unwrap();
 
         // debug!("Parsing table schema: {}", raw);
 
         let caps = table_regex
             .captures(raw)
-            .expect("Failed capturing")
+            .expect(format!("Failed capturing schema def: {}", raw).as_str())
             .iter()
             .map(|elem| elem.unwrap())
             .collect::<Vec<_>>();
         if caps.len() != 3 {
-            return Err("Cannot find name and fields".into());
+            panic!("Cannot find name and fields");
         }
 
         let name = caps[1].as_str();
 
         if name == "sqlite_sequence" {
-            return Ok(TableSchema {
+            return TableSchema {
                 name: name.to_string(),
                 fields: vec![],
-            });
+            };
         }
 
         let raw_fields_str = caps[2].as_str();
@@ -88,15 +90,24 @@ impl TableSchema {
         let mut fields = vec![];
 
         for raw_field in raw_field_list {
-            let parts = raw_field.split(char::is_whitespace).collect::<Vec<_>>();
-            if parts.len() < 2 {
-                return Err("Field def not recognized".into());
-            }
+            let field_re =
+                Regex::new(r#"^\s*((?:\")[^"]+(?:\")|[^ ]+)\s+([^ ]+)($|\s+.*)"#).unwrap();
+            let caps = field_re
+                .captures(raw_field)
+                .expect("Failed capturing")
+                .iter()
+                .map(|elem| elem.unwrap())
+                .collect::<Vec<_>>();
 
-            let name = parts[0].to_string();
-            let mut kind = TableFieldKind::from(parts[1]);
+            let name = caps[1].as_str();
+            let name = if name.starts_with('"') {
+                name[1..name.len() - 1].to_string()
+            } else {
+                name.to_string()
+            };
+            let mut kind = TableFieldKind::from(caps[2].as_str());
 
-            let suffix = parts[2..].join(" ");
+            let suffix = caps[3].as_str();
             let primary_key = suffix.contains("primary key");
             if suffix.contains("autoincrement") {
                 kind.to_auto_increment();
@@ -112,10 +123,47 @@ impl TableSchema {
             });
         }
 
-        Ok(TableSchema {
+        TableSchema {
             name: name.to_string(),
             fields,
-        })
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct IndexField {
+    pub(crate) field: String,
+    pub(super) ascending: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct IndexSchema {
+    pub(crate) table: String,
+    pub(crate) fields: Vec<IndexField>,
+}
+
+impl IndexSchema {
+    fn from(raw: &str) -> Self {
+        unimplemented!()
+    }
+}
+
+pub(crate) enum Schema {
+    Index(IndexSchema),
+    Table(TableSchema),
+}
+
+impl Schema {
+    pub(crate) fn from(raw: &str) -> Self {
+        debug!("Schema is parsed: {}", raw);
+
+        if raw.to_lowercase().contains("create index") {
+            Self::Index(IndexSchema::from(raw))
+        } else if raw.to_lowercase().contains("create table") {
+            Self::Table(TableSchema::from(raw))
+        } else {
+            panic!("Schema not recognized")
+        }
     }
 }
 
@@ -124,7 +172,7 @@ mod test {
     use crate::schema::TableSchema;
 
     #[test]
-    fn test_from() {
+    fn test_schema_from() {
         dbg!(TableSchema::from(
             "CREATE TABLE apples\n(\n\tid integer primary key autoincrement,\n\tname text,\n\tcolor text\n)"
         ));
@@ -133,6 +181,10 @@ mod test {
 
         dbg!(TableSchema::from(
             "CREATE TABLE oranges\n(\n\tid integer primary key autoincrement,\n\tname text,\n\tdescription text\n)"
+        ));
+
+        dbg!(TableSchema::from(
+            "CREATE TABLE oranges\n(\n\t\"id multiple words\" integer primary key autoincrement,\n\tname text,\n\tdescription text\n)"
         ));
     }
 }

@@ -42,6 +42,12 @@ impl<'a> Reader<'a, u8> {
         i16::from_be_bytes(self.pop(2).try_into().expect("Casting to 2 bytes"))
     }
 
+    pub(crate) fn pop_i24(&mut self) -> i32 {
+        let mut bytes = self.pop(3).to_vec();
+        bytes.insert(0, 0);
+        i32::from_be_bytes(bytes[..].try_into().expect("Casting to 2 bytes"))
+    }
+
     pub(crate) fn pop_i32(&mut self) -> i32 {
         i32::from_be_bytes(self.pop(4).try_into().expect("Casting to 4 bytes"))
     }
