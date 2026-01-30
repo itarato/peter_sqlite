@@ -17,9 +17,12 @@ impl QueryExecutor {
         let table = db.tables.get(&query.source).unwrap();
         let mut query_visitor = match &query.fields {
             QueryField::Count => QueryVisitor::Count(0),
-            QueryField::List(fields) => {
-                QueryVisitor::Fields(fields.iter().map(|name| table.field_index(name)).collect())
-            }
+            QueryField::List(fields) => QueryVisitor::Fields(
+                fields
+                    .iter()
+                    .map(|name| table.sql_schema.field_index(name))
+                    .collect(),
+            ),
         };
 
         let mut offset_stack: VecDeque<usize> = VecDeque::new();
@@ -36,7 +39,7 @@ impl QueryExecutor {
 
                         let mut is_match = true;
                         for cond in &query.conditions {
-                            let field_index = table.field_index(&cond.lhs);
+                            let field_index = table.sql_schema.field_index(&cond.lhs);
                             if !cond.op.eval(&row[field_index], &cond.rhs) {
                                 is_match = false;
                                 break;

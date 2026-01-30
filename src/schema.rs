@@ -1,4 +1,4 @@
-use std::panic;
+use std::{collections::HashMap, panic};
 
 use log::debug;
 use regex::Regex;
@@ -55,9 +55,23 @@ impl TableField {
 pub(crate) struct TableSchema {
     pub(crate) name: String,
     pub(crate) fields: Vec<TableField>,
+    field_index_cache: HashMap<String, usize>,
 }
 
 impl TableSchema {
+    fn new(name: String, fields: Vec<TableField>) -> Self {
+        let mut field_index_cache = HashMap::new();
+        for (i, field) in fields.iter().enumerate() {
+            field_index_cache.insert(field.name.clone(), i);
+        }
+
+        Self {
+            name,
+            fields,
+            field_index_cache,
+        }
+    }
+
     pub(crate) fn from(raw: &str) -> Self {
         let table_regex = Regex::new(r#"(?s)CREATE\s+TABLE\s+"?(\w+)"?\s*\((.*)\)"#).unwrap();
 
@@ -76,10 +90,7 @@ impl TableSchema {
         let name = caps[1].as_str();
 
         if name == "sqlite_sequence" {
-            return TableSchema {
-                name: name.to_string(),
-                fields: vec![],
-            };
+            return TableSchema::new(name.to_string(), vec![]);
         }
 
         let raw_fields_str = caps[2].as_str();
@@ -123,10 +134,11 @@ impl TableSchema {
             });
         }
 
-        TableSchema {
-            name: name.to_string(),
-            fields,
-        }
+        TableSchema::new(name.to_string(), fields)
+    }
+
+    pub(crate) fn field_index(&self, name: &str) -> usize {
+        self.field_index_cache[name]
     }
 }
 
