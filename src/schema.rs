@@ -3,6 +3,8 @@ use std::{collections::HashMap, panic};
 use log::debug;
 use regex::Regex;
 
+use crate::common::Incrementer;
+
 #[derive(Debug)]
 pub(crate) enum TableFieldKind {
     Int { auto_increment: bool },
@@ -34,7 +36,6 @@ pub(crate) struct TableField {
     pub(crate) kind: TableFieldKind,
     pub(crate) primary_key: bool,
     pub(crate) allow_null: bool,
-    pub(crate) id_provider: u64,
 }
 
 impl TableField {
@@ -43,11 +44,6 @@ impl TableField {
             TableFieldKind::Int { auto_increment } => auto_increment,
             _ => false,
         }
-    }
-
-    pub(crate) fn next_autoincrement_value(&mut self) -> u64 {
-        self.id_provider += 1;
-        self.id_provider
     }
 }
 
@@ -130,7 +126,6 @@ impl TableSchema {
                 kind,
                 primary_key,
                 allow_null,
-                id_provider: 0,
             });
         }
 
@@ -139,6 +134,16 @@ impl TableSchema {
 
     pub(crate) fn field_index(&self, name: &str) -> usize {
         self.field_index_cache[name]
+    }
+
+    pub(crate) fn make_incrementer_map(&self) -> HashMap<usize, Incrementer> {
+        let mut map = HashMap::new();
+        for (i, field) in self.fields.iter().enumerate() {
+            if field.is_autoincrement() {
+                map.insert(i, Incrementer::new(1));
+            }
+        }
+        map
     }
 }
 

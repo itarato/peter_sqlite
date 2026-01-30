@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::schema::TableSchema;
 
 pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -35,5 +33,21 @@ impl Table {
             root_page,
             sql_schema,
         }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Incrementer {
+    value: u64,
+}
+
+impl Incrementer {
+    pub(crate) fn new(value: u64) -> Self {
+        Self { value }
+    }
+
+    pub(crate) fn next_value(&mut self) -> u64 {
+        self.value += 1;
+        self.value - 1
     }
 }
