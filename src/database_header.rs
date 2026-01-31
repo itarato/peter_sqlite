@@ -1,5 +1,6 @@
 use crate::reader::Reader;
 
+#[derive(Debug)]
 pub(crate) struct DatabaseHeader {
     pub(crate) page_size: usize,
     schema_format: i32,

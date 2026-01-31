@@ -2,8 +2,8 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::{
     btree_page_header::BTreePageHeader,
-    cell::{TableBTreeInteriorCell, TableBTreeLeafCell},
-    common::{BTreePageType, Incrementer},
+    cell::{IndexBTreeLeafCell, TableBTreeInteriorCell, TableBTreeLeafCell},
+    common::{BTreePageType, Incrementer, Index},
     database::Database,
     query::{Query, QueryField},
     reader::Reader,
@@ -14,18 +14,54 @@ pub(crate) struct QueryExecutor;
 
 impl QueryExecutor {
     pub(crate) fn execute_query(query: &Query, db: &Database, reader: &Reader<'_, u8>) {
+        if query.conditions.len() == 1 {
+            if let Some(index) = db.indices.get(&query.source) {
+                if index.sql_schema.fields[0].field == query.conditions[0].lhs {
+                    return Self::index_search(query, db, reader, index);
+                }
+            }
+        }
+
+        Self::full_table_scan(query, db, reader);
+    }
+
+    fn index_search(query: &Query, db: &Database, reader: &Reader<'_, u8>, index: &Index) {
+        let page_offset = db.header.page_size * (index.root_page - 1);
+
+        loop {
+            let page_header = BTreePageHeader::from(&reader.at(page_offset));
+
+            match page_header.kind {
+                BTreePageType::LeafIndex => {
+                    //
+                    for cell_offset in page_header.cell_offsets {
+                        let cell = IndexBTreeLeafCell::from(&reader.at(page_offset + cell_offset));
+                        dbg!(cell);
+                    }
+                }
+                BTreePageType::InteriorIndex => unimplemented!(),
+                other => unimplemented!("Page type {:?} not expected", other),
+            }
+
+            break;
+        }
+    }
+
+    fn full_table_scan(query: &Query, db: &Database, reader: &Reader<'_, u8>) {
         let table = db.tables.get(&query.source).unwrap();
+        let sql_schema = &table.sql_schema;
+
         let mut query_visitor = match &query.fields {
             QueryField::Count => QueryVisitor::Count(0),
             QueryField::List(fields) => QueryVisitor::Fields(
                 fields
                     .iter()
-                    .map(|name| table.sql_schema.field_index(name))
+                    .map(|name| sql_schema.field_index(name))
                     .collect(),
             ),
         };
 
-        let mut incrementer_map = table.sql_schema.make_incrementer_map();
+        let mut incrementer_map = sql_schema.make_incrementer_map();
         let mut offset_stack: VecDeque<usize> = VecDeque::new();
         offset_stack.push_back(db.header.page_size * (table.root_page - 1));
 
@@ -36,12 +72,12 @@ impl QueryExecutor {
                 BTreePageType::LeafTable => {
                     for cell_offset in page_header.cell_offsets {
                         let cell = TableBTreeLeafCell::from(&reader.at(offset + cell_offset));
-                        let mut row = cell.payload.read_as_table_row(&table.sql_schema);
+                        let mut row = cell.payload.read_as_table_row(&sql_schema);
                         Self::apply_incrementer(&mut row, &mut incrementer_map);
 
                         let mut is_match = true;
                         for cond in &query.conditions {
-                            let field_index = table.sql_schema.field_index(&cond.lhs);
+                            let field_index = sql_schema.field_index(&cond.lhs);
                             if !cond.op.eval(&row[field_index], &cond.rhs) {
                                 is_match = false;
                                 break;
@@ -64,7 +100,7 @@ impl QueryExecutor {
                         (page_header.rightmost_pointer.unwrap() - 1) * db.header.page_size,
                     );
                 }
-                other => unimplemented!("Page type {:?} not implemented", other),
+                other => unimplemented!("Page type {:?} not expected", other),
             }
         }
 

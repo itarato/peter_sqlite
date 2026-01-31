@@ -69,9 +69,7 @@ impl TableSchema {
     }
 
     pub(crate) fn from(raw: &str) -> Self {
-        let table_regex = Regex::new(r#"(?s)CREATE\s+TABLE\s+"?(\w+)"?\s*\((.*)\)"#).unwrap();
-
-        // debug!("Parsing table schema: {}", raw);
+        let table_regex = Regex::new(r#"(?is)CREATE\s+TABLE\s+"?(\w+)"?\s*\((.*)\)"#).unwrap();
 
         let caps = table_regex
             .captures(raw)
@@ -84,7 +82,6 @@ impl TableSchema {
         }
 
         let name = caps[1].as_str();
-
         if name == "sqlite_sequence" {
             return TableSchema::new(name.to_string(), vec![]);
         }
@@ -155,31 +152,49 @@ pub(crate) struct IndexField {
 
 #[derive(Debug)]
 pub(crate) struct IndexSchema {
+    pub(crate) name: String,
     pub(crate) table: String,
     pub(crate) fields: Vec<IndexField>,
 }
 
 impl IndexSchema {
-    fn from(raw: &str) -> Self {
-        unimplemented!()
-    }
-}
-
-pub(crate) enum Schema {
-    Index(IndexSchema),
-    Table(TableSchema),
-}
-
-impl Schema {
     pub(crate) fn from(raw: &str) -> Self {
-        debug!("Schema is parsed: {}", raw);
+        let table_regex =
+            Regex::new(r#"(?is)CREATE\s+INDEX\s+(\w+)\s+ON\s+(\w+)\s*\((.*)\)"#).unwrap();
 
-        if raw.to_lowercase().contains("create index") {
-            Self::Index(IndexSchema::from(raw))
-        } else if raw.to_lowercase().contains("create table") {
-            Self::Table(TableSchema::from(raw))
-        } else {
-            panic!("Schema not recognized")
+        let caps = table_regex
+            .captures(raw)
+            .expect(format!("Failed capturing schema def: {}", raw).as_str())
+            .iter()
+            .map(|elem| elem.unwrap())
+            .collect::<Vec<_>>();
+        if caps.len() != 4 {
+            panic!("Cannot find name, table and fields");
+        }
+
+        let name = caps[1].as_str().to_string();
+        let table = caps[2].as_str().to_string();
+
+        let raw_fields_str = caps[3].as_str();
+        let raw_field_list = raw_fields_str
+            .split(',')
+            .map(|s| s.trim())
+            .collect::<Vec<_>>();
+        let mut fields = vec![];
+
+        for raw_field in raw_field_list {
+            let raw_field_parts = raw_field.split_whitespace().collect::<Vec<_>>();
+
+            let field = raw_field_parts[0].to_string();
+            let ascending = raw_field_parts[1] == "ASC";
+
+            fields.push(IndexField { field, ascending });
+        }
+
+        Self {
+            name,
+            table,
+            fields,
         }
     }
 }

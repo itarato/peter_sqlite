@@ -1,4 +1,4 @@
-use crate::schema::TableSchema;
+use crate::schema::{IndexSchema, TableSchema};
 
 pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -34,6 +34,35 @@ impl Table {
             sql_schema,
         }
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct Index {
+    pub(crate) table_name: String,
+    pub(crate) index_name: String,
+    pub(crate) root_page: usize,
+    pub(crate) sql_schema: IndexSchema,
+}
+
+impl Index {
+    pub(crate) fn new(
+        table_name: String,
+        index_name: String,
+        root_page: usize,
+        sql_schema: IndexSchema,
+    ) -> Self {
+        Self {
+            table_name,
+            index_name,
+            root_page,
+            sql_schema,
+        }
+    }
+}
+
+pub(crate) enum Schema {
+    Table(Table),
+    Index(Index),
 }
 
 #[derive(Debug)]
