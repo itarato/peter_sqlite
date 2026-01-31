@@ -2,7 +2,9 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::{
     btree_page_header::BTreePageHeader,
-    cell::{IndexBTreeLeafCell, TableBTreeInteriorCell, TableBTreeLeafCell},
+    cell::{
+        IndexBTreeInteriorCell, IndexBTreeLeafCell, TableBTreeInteriorCell, TableBTreeLeafCell,
+    },
     common::{BTreePageType, Incrementer, Index},
     database::Database,
     query::{Query, QueryField},
@@ -26,24 +28,43 @@ impl QueryExecutor {
     }
 
     fn index_search(query: &Query, db: &Database, reader: &Reader<'_, u8>, index: &Index) {
-        let page_offset = db.header.page_size * (index.root_page - 1);
+        let index_schema = &index.sql_schema;
+        let table = db.tables.get(&query.source).unwrap();
+        let table_schema = &table.sql_schema;
 
-        loop {
+        let mut offset_stack: VecDeque<usize> = VecDeque::new();
+        offset_stack.push_back(db.header.page_size * (index.root_page - 1));
+
+        while let Some(page_offset) = offset_stack.pop_front() {
             let page_header = BTreePageHeader::from(&reader.at(page_offset));
+            dbg!(&page_header);
 
             match page_header.kind {
                 BTreePageType::LeafIndex => {
-                    //
                     for cell_offset in page_header.cell_offsets {
                         let cell = IndexBTreeLeafCell::from(&reader.at(page_offset + cell_offset));
-                        dbg!(cell);
+                        let records = cell
+                            .payload
+                            .read_as_leaf_index_row(table_schema, index_schema);
+                        // TODO: how to find the record from the row id???
+                        //
+                        dbg!(records);
                     }
                 }
-                BTreePageType::InteriorIndex => unimplemented!(),
-                other => unimplemented!("Page type {:?} not expected", other),
-            }
+                BTreePageType::InteriorIndex => {
+                    dbg!(&page_header);
+                    for cell_offset in page_header.cell_offsets {
+                        let cell =
+                            IndexBTreeInteriorCell::from(&reader.at(page_offset + cell_offset));
+                        offset_stack.push_back((cell.left_child_pointer - 1) * db.header.page_size);
+                    }
 
-            break;
+                    offset_stack.push_back(
+                        (page_header.rightmost_pointer.unwrap() - 1) * db.header.page_size,
+                    );
+                }
+                other => panic!("Page type {:?} not expected", other),
+            }
         }
     }
 

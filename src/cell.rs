@@ -1,5 +1,5 @@
 use crate::{
-    common::{BTreePageType, Index, Schema, Table},
+    common::{Index, Schema, Table},
     reader::Reader,
     record::{Record, RecordFormat},
     schema::{IndexSchema, TableSchema},
@@ -59,6 +59,7 @@ impl CellPayload {
 
     pub(crate) fn read_as_table_row(&self, schema: &TableSchema) -> Vec<Record> {
         let mut reader = Reader::new(&self.bytes[..]);
+        // dbg!(&self.bytes);
 
         reader.pop_varint(); // Size of record header (varint)
 
@@ -73,11 +74,45 @@ impl CellPayload {
             .map(|format| format.pop_value(&mut reader))
             .collect::<Vec<_>>()
     }
+
+    pub(crate) fn read_as_leaf_index_row(
+        &self,
+        table_schema: &TableSchema,
+        index_schema: &IndexSchema,
+    ) -> (
+        Vec<Record>, /* table fields */
+        Vec<Record>, /* index fields */
+    ) {
+        let mut reader = Reader::new(&self.bytes[..]);
+        reader.pop_varint(); // Size of record header (varint)
+
+        let table_record_formats = &table_schema
+            .fields
+            .iter()
+            .map(|_| RecordFormat::from(reader.pop_varint()))
+            .collect::<Vec<_>>();
+
+        let index_record_formats = &index_schema
+            .fields
+            .iter()
+            .map(|_| RecordFormat::from(reader.pop_varint()))
+            .collect::<Vec<_>>();
+
+        (
+            table_record_formats
+                .iter()
+                .map(|format| format.pop_value(&mut reader))
+                .collect(),
+            index_record_formats
+                .iter()
+                .map(|format| format.pop_value(&mut reader))
+                .collect(),
+        )
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct TableBTreeLeafCell {
-    payload_size: usize,
     rowid: i64,
     pub(crate) payload: CellPayload,
 }
@@ -91,7 +126,6 @@ impl TableBTreeLeafCell {
         // There is a 4 byte overflow page - but it feels like only should be loaded strictly when the content is not fitting on the page.
 
         Self {
-            payload_size,
             rowid,
             payload: CellPayload::new(payload_bytes),
         }
@@ -120,7 +154,6 @@ impl TableBTreeInteriorCell {
 
 #[derive(Debug)]
 pub(crate) struct IndexBTreeLeafCell {
-    payload_size: usize,
     pub(crate) payload: CellPayload,
 }
 
@@ -132,7 +165,27 @@ impl IndexBTreeLeafCell {
         // There is a 4 byte overflow page - but it feels like only should be loaded strictly when the content is not fitting on the page.
 
         Self {
-            payload_size,
+            payload: CellPayload::new(payload_bytes),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct IndexBTreeInteriorCell {
+    pub(crate) left_child_pointer: usize,
+    pub(crate) payload: CellPayload,
+}
+
+impl IndexBTreeInteriorCell {
+    pub(crate) fn from(reader: &Reader<'_, u8>) -> Self {
+        let mut reader = reader.clone();
+        let left_child_pointer = reader.pop_i32() as usize;
+        let payload_size = reader.pop_varint() as usize;
+        let payload_bytes = reader.pop(payload_size).to_vec();
+        // There is a 4 byte overflow page - but it feels like only should be loaded strictly when the content is not fitting on the page.
+
+        Self {
+            left_child_pointer,
             payload: CellPayload::new(payload_bytes),
         }
     }
