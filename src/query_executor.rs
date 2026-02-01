@@ -22,7 +22,7 @@ impl QueryExecutor {
             if let Some(index) = db.indices.get(&query.source) {
                 // Assure we query by the index field.
                 if index.sql_schema.fields[0].field == query.conditions[0].lhs {
-                    let row_ids = Self::index_search(query, db, reader, index);
+                    Self::index_search(query, db, reader, index);
                     return;
                 }
             }
@@ -31,12 +31,7 @@ impl QueryExecutor {
         Self::full_table_scan(query, db, reader);
     }
 
-    fn index_search(
-        query: &Query,
-        db: &Database,
-        reader: &Reader<'_, u8>,
-        index: &Index,
-    ) -> Vec<i64> {
+    fn index_search(query: &Query, db: &Database, reader: &Reader<'_, u8>, index: &Index) {
         let index_schema = &index.sql_schema;
         let table = db.tables.get(&query.source).unwrap();
         let table_schema = &table.sql_schema;
@@ -48,7 +43,7 @@ impl QueryExecutor {
         assert_eq!(QueryConditionOp::Eq, query.conditions[0].op);
 
         let target = &query.conditions[0].rhs;
-        let mut row_ids = vec![];
+        let mut rowids = vec![];
 
         while let Some(page_offset) = offset_stack.pop_front() {
             let page_header = BTreePageHeader::from(&reader.at(page_offset));
@@ -61,8 +56,7 @@ impl QueryExecutor {
                         let (values, positions) = cell.payload.read_as_index_row(index_schema);
 
                         if target == &values[0] {
-                            // dbg!(positions);
-                            row_ids.push(positions[0].as_int().unwrap());
+                            rowids.push(positions[0].as_int().unwrap());
                         }
                     }
                 }
@@ -97,7 +91,7 @@ impl QueryExecutor {
             }
         }
 
-        row_ids
+        Self::rowid_lookup_search(query, db, reader, rowids);
     }
 
     fn rowid_lookup_search(
@@ -119,7 +113,6 @@ impl QueryExecutor {
             ),
         };
 
-        let mut incrementer_map = sql_schema.make_incrementer_map();
         let mut offset_stack: VecDeque<(usize, i64)> = VecDeque::new();
         offset_stack.push_back((db.header.page_size * (table.root_page - 1), i64::MAX));
 
@@ -129,38 +122,41 @@ impl QueryExecutor {
 
             match page_header.kind {
                 BTreePageType::LeafTable => {
-                    let first_rowid = last_rowid + 1 - page_header.cell_count as i64;
+                    let first_rowid =
+                        TableBTreeLeafCell::from(&reader.at(offset + page_header.cell_offsets[0]))
+                            .rowid;
+                    let last_rowid =
+                        TableBTreeLeafCell::from(&reader.at(offset
+                            + page_header.cell_offsets[(page_header.cell_count - 1) as usize]))
+                        .rowid;
                     for rowid in &rowids {
                         if rowid >= &first_rowid && rowid <= &last_rowid {
-                            // Process the row
-                            let cell =
-                                TableBTreeLeafCell::from(&reader.at(offset
-                                    + page_header.cell_offsets[(rowid - first_rowid) as usize]));
-                            // debug!("RowID: {}", cell.rowid);
-                            let row = cell.payload.read_as_table_row(&sql_schema);
-                            query_visitor.signal_on_match(&row);
+                            let mut i = 0;
+                            let mut j = page_header.cell_count - 1;
+                            let mut mid = (i + j) / 2;
+                            let mut row = None;
+
+                            while i <= j {
+                                let mid_cell = TableBTreeLeafCell::from(
+                                    &reader.at(offset + page_header.cell_offsets[mid as usize]),
+                                );
+                                if &mid_cell.rowid == rowid {
+                                    row = Some(mid_cell.payload.read_as_table_row(&sql_schema));
+                                    break;
+                                } else if &mid_cell.rowid > rowid {
+                                    j = mid - 1;
+                                } else {
+                                    i = mid + 1;
+                                }
+                                mid = (i + j) / 2;
+                            }
+
+                            if let Some(mut row) = row {
+                                table.sql_schema.apply_rowid(*rowid, &mut row);
+                                query_visitor.signal_on_match(&row);
+                            }
                         }
                     }
-
-                    // for cell_offset in page_header.cell_offsets {
-                    //     let cell = TableBTreeLeafCell::from(&reader.at(offset + cell_offset));
-                    //     // debug!("RowID: {}", cell.rowid);
-                    //     let mut row = cell.payload.read_as_table_row(&sql_schema);
-                    //     Self::apply_incrementer(&mut row, &mut incrementer_map);
-
-                    //     let mut is_match = true;
-                    //     for cond in &query.conditions {
-                    //         let field_index = sql_schema.field_index(&cond.lhs);
-                    //         if !cond.op.eval(&row[field_index], &cond.rhs) {
-                    //             is_match = false;
-                    //             break;
-                    //         }
-                    //     }
-
-                    //     if is_match {
-                    //         query_visitor.signal_on_match(&row);
-                    //     }
-                    // }
                 }
 
                 BTreePageType::InteriorTable => {

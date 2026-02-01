@@ -3,7 +3,7 @@ use std::{collections::HashMap, panic};
 use log::debug;
 use regex::Regex;
 
-use crate::common::Incrementer;
+use crate::{common::Incrementer, record::Record};
 
 #[derive(Debug)]
 pub(crate) enum TableFieldKind {
@@ -129,6 +129,14 @@ impl TableSchema {
         TableSchema::new(name.to_string(), fields)
     }
 
+    pub(crate) fn apply_rowid(&self, rowid: i64, row: &mut Vec<Record>) {
+        for (i, field) in self.fields.iter().enumerate() {
+            if field.is_autoincrement() && field.primary_key {
+                row[i] = Record::I64(rowid);
+            }
+        }
+    }
+
     pub(crate) fn field_index(&self, name: &str) -> usize {
         self.field_index_cache[name]
     }
@@ -186,7 +194,11 @@ impl IndexSchema {
             let raw_field_parts = raw_field.split_whitespace().collect::<Vec<_>>();
 
             let field = raw_field_parts[0].to_string();
-            let ascending = raw_field_parts[1] == "ASC";
+            let ascending = if raw_field_parts.len() > 1 {
+                raw_field_parts[1] == "ASC"
+            } else {
+                true
+            };
 
             fields.push(IndexField { field, ascending });
         }

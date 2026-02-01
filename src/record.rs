@@ -48,6 +48,7 @@ impl Record {
         match self {
             Self::I8(v) => Some(*v as i64),
             Self::I16(v) => Some(*v as i64),
+            Self::I24(v) => Some(*v as i64),
             Self::I32(v) => Some(*v as i64),
             Self::I64(v) => Some(*v),
             _ => None,
