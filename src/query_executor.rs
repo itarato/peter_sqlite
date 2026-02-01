@@ -1,5 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
+use log::debug;
+
 use crate::{
     btree_page_header::BTreePageHeader,
     cell::{
@@ -7,7 +9,7 @@ use crate::{
     },
     common::{BTreePageType, Incrementer, Index},
     database::Database,
-    query::{Query, QueryField},
+    query::{Query, QueryConditionOp, QueryField},
     reader::Reader,
     record::Record,
 };
@@ -18,8 +20,10 @@ impl QueryExecutor {
     pub(crate) fn execute_query(query: &Query, db: &Database, reader: &Reader<'_, u8>) {
         if query.conditions.len() == 1 {
             if let Some(index) = db.indices.get(&query.source) {
+                // Assure we query by the index field.
                 if index.sql_schema.fields[0].field == query.conditions[0].lhs {
-                    return Self::index_search(query, db, reader, index);
+                    let row_ids = Self::index_search(query, db, reader, index);
+                    return;
                 }
             }
         }
@@ -27,7 +31,12 @@ impl QueryExecutor {
         Self::full_table_scan(query, db, reader);
     }
 
-    fn index_search(query: &Query, db: &Database, reader: &Reader<'_, u8>, index: &Index) {
+    fn index_search(
+        query: &Query,
+        db: &Database,
+        reader: &Reader<'_, u8>,
+        index: &Index,
+    ) -> Vec<usize> {
         let index_schema = &index.sql_schema;
         let table = db.tables.get(&query.source).unwrap();
         let table_schema = &table.sql_schema;
@@ -35,37 +44,60 @@ impl QueryExecutor {
         let mut offset_stack: VecDeque<usize> = VecDeque::new();
         offset_stack.push_back(db.header.page_size * (index.root_page - 1));
 
+        assert_eq!(1, query.conditions.len());
+        assert_eq!(QueryConditionOp::Eq, query.conditions[0].op);
+
+        let target = &query.conditions[0].rhs;
+        let mut row_ids = vec![];
+
         while let Some(page_offset) = offset_stack.pop_front() {
             let page_header = BTreePageHeader::from(&reader.at(page_offset));
-            dbg!(&page_header);
+            // dbg!(&page_header);
 
             match page_header.kind {
                 BTreePageType::LeafIndex => {
                     for cell_offset in page_header.cell_offsets {
                         let cell = IndexBTreeLeafCell::from(&reader.at(page_offset + cell_offset));
-                        let records = cell
-                            .payload
-                            .read_as_leaf_index_row(table_schema, index_schema);
-                        // TODO: how to find the record from the row id???
-                        //
-                        dbg!(records);
+                        let (values, positions) = cell.payload.read_as_index_row(index_schema);
+
+                        if target == &values[0] {
+                            // dbg!(positions);
+                            row_ids.push(positions[0].as_int().unwrap() as usize);
+                        }
                     }
                 }
                 BTreePageType::InteriorIndex => {
-                    dbg!(&page_header);
+                    // dbg!(&page_header);
+                    let mut can_be_last_child = true;
+
                     for cell_offset in page_header.cell_offsets {
                         let cell =
                             IndexBTreeInteriorCell::from(&reader.at(page_offset + cell_offset));
-                        offset_stack.push_back((cell.left_child_pointer - 1) * db.header.page_size);
+                        let (values, positions) = cell.payload.read_as_index_row(index_schema);
+                        assert_eq!(1, values.len());
+                        assert_eq!(1, positions.len());
+
+                        if target <= &values[0] {
+                            offset_stack
+                                .push_back((cell.left_child_pointer - 1) * db.header.page_size);
+                        }
+
+                        if target < &values[0] {
+                            can_be_last_child = false;
+                        }
                     }
 
-                    offset_stack.push_back(
-                        (page_header.rightmost_pointer.unwrap() - 1) * db.header.page_size,
-                    );
+                    if can_be_last_child {
+                        offset_stack.push_back(
+                            (page_header.rightmost_pointer.unwrap() - 1) * db.header.page_size,
+                        );
+                    }
                 }
                 other => panic!("Page type {:?} not expected", other),
             }
         }
+
+        row_ids
     }
 
     fn full_table_scan(query: &Query, db: &Database, reader: &Reader<'_, u8>) {
@@ -88,11 +120,13 @@ impl QueryExecutor {
 
         while let Some(offset) = offset_stack.pop_front() {
             let page_header = BTreePageHeader::from(&reader.at(offset));
+            debug!("Page: {}", offset);
 
             match page_header.kind {
                 BTreePageType::LeafTable => {
                     for cell_offset in page_header.cell_offsets {
                         let cell = TableBTreeLeafCell::from(&reader.at(offset + cell_offset));
+                        debug!("RowID: {}", cell.rowid);
                         let mut row = cell.payload.read_as_table_row(&sql_schema);
                         Self::apply_incrementer(&mut row, &mut incrementer_map);
 
@@ -115,6 +149,11 @@ impl QueryExecutor {
                     for cell_offset in page_header.cell_offsets {
                         let cell = TableBTreeInteriorCell::from(&reader.at(offset + cell_offset));
                         offset_stack.push_back((cell.left_child_pointer - 1) * db.header.page_size);
+                        debug!(
+                            "Interior RowID: {} -> Offset: {}",
+                            cell.rowid,
+                            (cell.left_child_pointer - 1) * db.header.page_size
+                        );
                     }
 
                     offset_stack.push_back(

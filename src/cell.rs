@@ -75,35 +75,36 @@ impl CellPayload {
             .collect::<Vec<_>>()
     }
 
-    pub(crate) fn read_as_leaf_index_row(
+    pub(crate) fn read_as_index_row(
         &self,
-        table_schema: &TableSchema,
         index_schema: &IndexSchema,
     ) -> (
         Vec<Record>, /* table fields */
         Vec<Record>, /* index fields */
     ) {
+        // dbg!(&self.bytes);
+
         let mut reader = Reader::new(&self.bytes[..]);
         reader.pop_varint(); // Size of record header (varint)
 
-        let table_record_formats = &table_schema
+        let value_record_formats = &index_schema
             .fields
             .iter()
             .map(|_| RecordFormat::from(reader.pop_varint()))
             .collect::<Vec<_>>();
 
-        let index_record_formats = &index_schema
+        let position_record_formats = &index_schema
             .fields
             .iter()
             .map(|_| RecordFormat::from(reader.pop_varint()))
             .collect::<Vec<_>>();
 
         (
-            table_record_formats
+            value_record_formats
                 .iter()
                 .map(|format| format.pop_value(&mut reader))
                 .collect(),
-            index_record_formats
+            position_record_formats
                 .iter()
                 .map(|format| format.pop_value(&mut reader))
                 .collect(),
@@ -113,7 +114,7 @@ impl CellPayload {
 
 #[derive(Debug)]
 pub(crate) struct TableBTreeLeafCell {
-    rowid: i64,
+    pub(crate) rowid: i64,
     pub(crate) payload: CellPayload,
 }
 
@@ -135,7 +136,7 @@ impl TableBTreeLeafCell {
 #[derive(Debug)]
 pub(crate) struct TableBTreeInteriorCell {
     pub(crate) left_child_pointer: usize,
-    rowid: i64,
+    pub(crate) rowid: i64,
 }
 
 impl TableBTreeInteriorCell {

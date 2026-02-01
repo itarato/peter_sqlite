@@ -74,6 +74,38 @@ impl Record {
     }
 }
 
+impl PartialEq for Record {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.as_int(), other.as_int()) {
+            (Some(a), Some(b)) => return a.eq(&b),
+            _ => {}
+        }
+
+        match (self.as_str(), other.as_str()) {
+            (Some(a), Some(b)) => return a.eq(b),
+            _ => {}
+        }
+
+        false
+    }
+}
+
+impl PartialOrd for Record {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self.as_int(), other.as_int()) {
+            (Some(a), Some(b)) => return a.partial_cmp(&b),
+            _ => {}
+        }
+
+        match (self.as_str(), other.as_str()) {
+            (Some(a), Some(b)) => return a.partial_cmp(b),
+            _ => {}
+        }
+
+        None
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum RecordFormat {
     Null,

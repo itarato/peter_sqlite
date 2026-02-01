@@ -9,7 +9,7 @@ pub(crate) enum QueryField {
     List(Vec<String>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum QueryConditionOp {
     Eq,
 }
