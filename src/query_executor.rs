@@ -36,7 +36,7 @@ impl QueryExecutor {
         db: &Database,
         reader: &Reader<'_, u8>,
         index: &Index,
-    ) -> Vec<usize> {
+    ) -> Vec<i64> {
         let index_schema = &index.sql_schema;
         let table = db.tables.get(&query.source).unwrap();
         let table_schema = &table.sql_schema;
@@ -62,7 +62,7 @@ impl QueryExecutor {
 
                         if target == &values[0] {
                             // dbg!(positions);
-                            row_ids.push(positions[0].as_int().unwrap() as usize);
+                            row_ids.push(positions[0].as_int().unwrap());
                         }
                     }
                 }
@@ -100,6 +100,90 @@ impl QueryExecutor {
         row_ids
     }
 
+    fn rowid_lookup_search(
+        query: &Query,
+        db: &Database,
+        reader: &Reader<'_, u8>,
+        rowids: Vec<i64>,
+    ) {
+        let table = db.tables.get(&query.source).unwrap();
+        let sql_schema = &table.sql_schema;
+
+        let mut query_visitor = match &query.fields {
+            QueryField::Count => QueryVisitor::Count(0),
+            QueryField::List(fields) => QueryVisitor::Fields(
+                fields
+                    .iter()
+                    .map(|name| sql_schema.field_index(name))
+                    .collect(),
+            ),
+        };
+
+        let mut incrementer_map = sql_schema.make_incrementer_map();
+        let mut offset_stack: VecDeque<(usize, i64)> = VecDeque::new();
+        offset_stack.push_back((db.header.page_size * (table.root_page - 1), i64::MAX));
+
+        while let Some((offset, last_rowid)) = offset_stack.pop_front() {
+            let page_header = BTreePageHeader::from(&reader.at(offset));
+            // debug!("Page: {}", offset);
+
+            match page_header.kind {
+                BTreePageType::LeafTable => {
+                    let first_rowid = last_rowid + 1 - page_header.cell_count as i64;
+                    for rowid in &rowids {
+                        if rowid >= &first_rowid && rowid <= &last_rowid {
+                            // Process the row
+                            let cell =
+                                TableBTreeLeafCell::from(&reader.at(offset
+                                    + page_header.cell_offsets[(rowid - first_rowid) as usize]));
+                            // debug!("RowID: {}", cell.rowid);
+                            let row = cell.payload.read_as_table_row(&sql_schema);
+                            query_visitor.signal_on_match(&row);
+                        }
+                    }
+
+                    // for cell_offset in page_header.cell_offsets {
+                    //     let cell = TableBTreeLeafCell::from(&reader.at(offset + cell_offset));
+                    //     // debug!("RowID: {}", cell.rowid);
+                    //     let mut row = cell.payload.read_as_table_row(&sql_schema);
+                    //     Self::apply_incrementer(&mut row, &mut incrementer_map);
+
+                    //     let mut is_match = true;
+                    //     for cond in &query.conditions {
+                    //         let field_index = sql_schema.field_index(&cond.lhs);
+                    //         if !cond.op.eval(&row[field_index], &cond.rhs) {
+                    //             is_match = false;
+                    //             break;
+                    //         }
+                    //     }
+
+                    //     if is_match {
+                    //         query_visitor.signal_on_match(&row);
+                    //     }
+                    // }
+                }
+
+                BTreePageType::InteriorTable => {
+                    for cell_offset in page_header.cell_offsets {
+                        let cell = TableBTreeInteriorCell::from(&reader.at(offset + cell_offset));
+                        offset_stack.push_back((
+                            (cell.left_child_pointer - 1) * db.header.page_size,
+                            cell.rowid,
+                        ));
+                    }
+
+                    offset_stack.push_back((
+                        (page_header.rightmost_pointer.unwrap() - 1) * db.header.page_size,
+                        last_rowid,
+                    ));
+                }
+                other => unimplemented!("Page type {:?} not expected", other),
+            }
+        }
+
+        query_visitor.signal_post_query();
+    }
+
     fn full_table_scan(query: &Query, db: &Database, reader: &Reader<'_, u8>) {
         let table = db.tables.get(&query.source).unwrap();
         let sql_schema = &table.sql_schema;
@@ -120,13 +204,13 @@ impl QueryExecutor {
 
         while let Some(offset) = offset_stack.pop_front() {
             let page_header = BTreePageHeader::from(&reader.at(offset));
-            debug!("Page: {}", offset);
+            // debug!("Page: {}", offset);
 
             match page_header.kind {
                 BTreePageType::LeafTable => {
                     for cell_offset in page_header.cell_offsets {
                         let cell = TableBTreeLeafCell::from(&reader.at(offset + cell_offset));
-                        debug!("RowID: {}", cell.rowid);
+                        // debug!("RowID: {}", cell.rowid);
                         let mut row = cell.payload.read_as_table_row(&sql_schema);
                         Self::apply_incrementer(&mut row, &mut incrementer_map);
 
@@ -149,11 +233,11 @@ impl QueryExecutor {
                     for cell_offset in page_header.cell_offsets {
                         let cell = TableBTreeInteriorCell::from(&reader.at(offset + cell_offset));
                         offset_stack.push_back((cell.left_child_pointer - 1) * db.header.page_size);
-                        debug!(
-                            "Interior RowID: {} -> Offset: {}",
-                            cell.rowid,
-                            (cell.left_child_pointer - 1) * db.header.page_size
-                        );
+                        // debug!(
+                        //     "Interior RowID: {} -> Offset: {}",
+                        //     cell.rowid,
+                        //     (cell.left_child_pointer - 1) * db.header.page_size
+                        // );
                     }
 
                     offset_stack.push_back(
